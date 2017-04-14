@@ -13,7 +13,7 @@ int main() {
     };
 
     // symmetric listen and connect
-    c.listen(nullptr, 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
+    if (c.listen(nullptr, 3000, 0, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
 
         // getting nullptr for socket can be sign of error
 
@@ -21,7 +21,9 @@ int main() {
 
         socket->close();
 
-    }, socketAllocator);
+    }, socketAllocator)) {
+        std::cout << "is now listening" << std::endl;
+    }
 
     c.connect("localhost", 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
         if (!socket) {

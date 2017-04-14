@@ -7,7 +7,12 @@
 namespace uS {
 
 typedef int SocketDescriptor;
-static const SocketDescriptor INVALID_SOCKET = -1;
+static const SocketDescriptor SOCKET_ERROR = -1;
+
+enum {
+    ONLY_IPV4,
+    REUSE_PORT
+};
 
 template <class Impl>
 class Berkeley : public Impl {
@@ -30,10 +35,10 @@ public:
 private:
 
     // helper functions
-    SocketDescriptor createSocket();
+    SocketDescriptor createSocket(int, int, int);
     SocketDescriptor acceptSocket();
     bool wouldBlock();
-    void closeSocket();
+    void closeSocket(SocketDescriptor fd);
 
     std::function<Socket *(Berkeley *)> defaultSocketAllocator;
 
@@ -43,6 +48,8 @@ private:
         int port;
         std::function<void(Socket *socket)> acceptHandler;
         std::function<Socket *(Berkeley *)> socketAllocator;
+
+        typename Impl::Poll *listenPoll;
     };
 
     std::vector<ListenData> listenData;
@@ -51,12 +58,8 @@ private:
 public:
     Berkeley();
 
-    void listen(const char *host, int port, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
+    bool listen(const char *host, int port, int options, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
     void connect(const char *host, int port, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
-
-
-    // can be implemented in Impl
-    //void run();
 
 };
 
