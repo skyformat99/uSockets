@@ -3,12 +3,13 @@
 
 namespace uS {
 
-class Context;
+template <class Impl> class Context;
 
+template <class Impl>
 class Socket {
-    Context *context;
+    Context<Impl> *context;
 public:
-    Socket(Context *context);
+    Socket(Context<Impl> *context);
 };
 
 }

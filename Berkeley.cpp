@@ -1,13 +1,18 @@
 #include "Berkeley.h"
+#include "Epoll.h"
 
 namespace uS {
 
-Berkeley::Berkeley() {
+template <class Impl>
+Berkeley<Impl>::Berkeley() {
 
 }
 
-void Berkeley::listen(const char *host, int port) {
+template <class Impl>
+void Berkeley<Impl>::listen(const char *host, int port) {
 
 }
+
+template class Berkeley<Epoll>;
 
 }

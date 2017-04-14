@@ -9,7 +9,8 @@ namespace uS {
 typedef int SocketDescriptor;
 static const SocketDescriptor INVALID_SOCKET = -1;
 
-class Berkeley {
+template <class Impl>
+class Berkeley : Impl {
 
     // helper functions
     SocketDescriptor createSocket();

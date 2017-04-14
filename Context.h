@@ -6,32 +6,19 @@
 #include <functional>
 #include <vector>
 
-// interface implemented in layers with different backends
-// BSD wrapper (top level) has poll backends (lowest level)
-// TCP stack has everything in one module
-
-// Context<BSD<Epoll>>
-// Context<BSD<Libuv>>
-// Context<BSD<Asio>>
-// Context<uSockets>
-
-// hard-code BSD for now
-#include "Berkeley.h"
-
 namespace uS {
 
-class Context {
+template <class Impl>
+class Context : Impl {
 
-    Berkeley impl;
-
-    std::function<Socket *(Context *)> defaultSocketAllocator;
+    std::function<Socket<Impl> *(Context *)> defaultSocketAllocator;
 
     // this data is similar to what you pass to listen, maybe let the user fill it and have different helper constructors?
     struct ListenData {
         const char *host;
         int port;
-        std::function<void(Socket *socket)> acceptHandler;
-        std::function<Socket *(Context *)> socketAllocator;
+        std::function<void(Socket<Impl> *socket)> acceptHandler;
+        std::function<Socket<Impl> *(Context *)> socketAllocator;
     };
 
     std::vector<ListenData> listenData;
@@ -39,8 +26,8 @@ public:
     Context();
 
     // implemented by the impl
-    void listen(const char *host, int port, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Context *)> socketAllocator = nullptr);
-    void connect(const char *host, int port, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Context *)> socketAllocator = nullptr);
+    void listen(const char *host, int port, std::function<void(Socket<Impl> *socket)> acceptHandler, std::function<Socket<Impl> *(Context *)> socketAllocator = nullptr);
+    void connect(const char *host, int port, std::function<void(Socket<Impl> *socket)> acceptHandler, std::function<Socket<Impl> *(Context *)> socketAllocator = nullptr);
 
     // pre, post events
     //
