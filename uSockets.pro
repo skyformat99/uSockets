@@ -4,13 +4,9 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += main.cpp \
-    Context.cpp \
-    Socket.cpp \
     Berkeley.cpp \
     Epoll.cpp
 
 HEADERS += \
-    Context.h \
-    Socket.h \
     Berkeley.h \
     Epoll.h

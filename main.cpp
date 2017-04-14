@@ -1,4 +1,3 @@
-#include "Context.h"
 #include "Berkeley.h"
 #include "Epoll.h"
 
@@ -6,22 +5,25 @@
 
 int main() {
 
-    uS::Context<uS::Berkeley<uS::Epoll>> c;
+    uS::Berkeley<uS::Epoll> c;
 
     // application decides how and what to allocate
-    auto socketAllocator = [](uS::Context<uS::Berkeley<uS::Epoll>> *context) -> uS::Socket<uS::Berkeley<uS::Epoll>> * {
-        return new uS::Socket<uS::Berkeley<uS::Epoll>>(context);
+    auto socketAllocator = [](uS::Berkeley<uS::Epoll> *context) -> uS::Berkeley<uS::Epoll>::Socket * {
+        return new uS::Berkeley<uS::Epoll>::Socket(context);
     };
 
     // symmetric listen and connect
-    c.listen(nullptr, 3000, [](uS::Socket<uS::Berkeley<uS::Epoll>> *socket) {
+    c.listen(nullptr, 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
 
         // getting nullptr for socket can be sign of error
 
         std::cout << "Client connected!" << std::endl;
+
+        socket->close();
+
     }, socketAllocator);
 
-    c.connect("localhost", 3000, [](uS::Socket<uS::Berkeley<uS::Epoll>> *socket) {
+    c.connect("localhost", 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
         if (!socket) {
             std::cout << "Connection failed" << std::endl;
         } else {
