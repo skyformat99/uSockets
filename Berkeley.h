@@ -31,7 +31,7 @@ public:
         }
 
         void shutdown();
-        void close();
+        void close(void (*cb)(Socket *));
 
         friend class Berkeley;
     };

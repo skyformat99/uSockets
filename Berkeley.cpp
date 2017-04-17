@@ -238,7 +238,10 @@ void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Sock
 }
 
 template <class Impl>
-void Berkeley<Impl>::Socket::close() {
+void Berkeley<Impl>::Socket::close(void (*cb)(Socket *)) {
+    Impl::Poll::stop(context);
+    Impl::Poll::close(context, (void (*)(typename Impl::Poll *)) cb);
+
     context->closeSocket(Impl::Poll::getFd());
 }
 

@@ -22,10 +22,9 @@ int main() {
         }
 
         static void onEnd(uS::Berkeley<uS::Epoll>::Socket *socket) {
-            HttpSocket *httpSocket = (HttpSocket *) socket;
-
-            httpSocket->close();
-            delete httpSocket;
+            socket->close([](uS::Berkeley<uS::Epoll>::Socket *socket) {
+                delete (HttpSocket *) socket;
+            });
         }
 
         static uS::Berkeley<uS::Epoll>::Socket *allocator(uS::Berkeley<uS::Epoll> *context) {
