@@ -7,8 +7,25 @@ int main() {
 
     uS::Berkeley<uS::Epoll> c;
 
+    enum SocketStates {
+        HTTP_SOCKET
+    };
+
+    struct HttpState {
+        static void onData(uS::Berkeley<uS::Epoll>::Socket *socket, char *data, size_t length) {
+            std::cout << "HttpSocket got data: " << std::string(data, length) << std::endl;
+        }
+
+        static void onEnd(uS::Berkeley<uS::Epoll>::Socket *socket) {
+            std::cout << "HttpSocket disconnected" << std::endl;
+
+            socket->close();
+        }
+    };
+    c.addSocketState<HttpState>(HTTP_SOCKET);
+
     // application decides how and what to allocate
-    auto socketAllocator = [](uS::Berkeley<uS::Epoll> *context) -> uS::Berkeley<uS::Epoll>::Socket * {
+    auto socketAllocator = [](uS::Berkeley<uS::Epoll> *context) {
         return new uS::Berkeley<uS::Epoll>::Socket(context);
     };
 
@@ -19,19 +36,20 @@ int main() {
 
         std::cout << "Client connected!" << std::endl;
 
-        socket->close();
+        // all new sockets needs to have a state set!
+        socket->setState(HTTP_SOCKET);
 
     }, socketAllocator)) {
         std::cout << "is now listening" << std::endl;
     }
 
-    c.connect("localhost", 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
-        if (!socket) {
-            std::cout << "Connection failed" << std::endl;
-        } else {
-            std::cout << "We connected" << std::endl;
-        }
-    }, socketAllocator);
+//    c.connect("localhost", 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
+//        if (!socket) {
+//            std::cout << "Connection failed" << std::endl;
+//        } else {
+//            std::cout << "We connected" << std::endl;
+//        }
+//    }, socketAllocator);
 
     // context is the loop
     c.run();

@@ -8,13 +8,12 @@
 #include <chrono>
 #include <algorithm>
 #include <vector>
-#include <mutex>
-
-typedef int uv_os_sock_t;
-static const int UV_READABLE = EPOLLIN;
-static const int UV_WRITABLE = EPOLLOUT;
 
 namespace uS {
+
+typedef int SocketDescriptor;
+static const int SOCKET_READABLE = EPOLLIN;
+static const int SOCKET_WRITABLE = EPOLLOUT;
 
 class Epoll
 {
@@ -22,9 +21,7 @@ public:
     struct Poll;
     struct Timer;
 
-    static std::recursive_mutex cbMutex;
     static void (*callbacks[16])(Poll *, int, int);
-    static int cbHead;
 
     struct Timepoint {
         void (*cb)(Timer *);
@@ -65,7 +62,6 @@ public:
     int getEpollFd() {
         return epfd;
     }
-
 
     struct Timer {
         Epoll *loop;
@@ -132,33 +128,23 @@ public:
             unsigned int cbIndex : 4;
         } state = {-1, 0};
 
-        Poll(Epoll *loop, uv_os_sock_t fd) {
-            fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-            state.fd = fd;
+        Poll(Epoll *loop/*, uv_os_sock_t fd*/) {
+            //fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+            //state.fd = fd;
             loop->numPolls++;
         }
 
-        // todo: pre-set all of callbacks up front and remove mutex
-        void setCb(void (*cb)(Poll *p, int status, int events)) {
-            cbMutex.lock();
-            state.cbIndex = cbHead;
-            for (int i = 0; i < cbHead; i++) {
-                if (callbacks[i] == cb) {
-                    state.cbIndex = i;
-                    break;
-                }
-            }
-            if (state.cbIndex == cbHead) {
-                callbacks[cbHead++] = cb;
-            }
-            cbMutex.unlock();
+        // this is new, set fd here instead of at constructor
+        void init(SocketDescriptor fd) {
+            fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+            state.fd = fd;
         }
 
         void (*getCb())(Poll *, int, int) {
             return callbacks[state.cbIndex];
         }
 
-        void reInit(Epoll *loop, uv_os_sock_t fd) {
+        void reInit(Epoll *loop, SocketDescriptor fd) {
             state.fd = fd;
             loop->numPolls++;
         }
@@ -202,11 +188,15 @@ public:
         }
 
     public:
+        void setState(int state) {
+            this->state.cbIndex = state;
+        }
+
         bool isClosed() {
             return state.fd == -1;
         }
 
-        uv_os_sock_t getFd() {
+        SocketDescriptor getFd() {
             return state.fd;
         }
 
@@ -219,19 +209,20 @@ public:
         Epoll *loop;
         void *data;
 
-        Async(Epoll *loop) : Poll(loop, ::eventfd(0, EFD_CLOEXEC)) {
+        Async(Epoll *loop) : Poll(loop) {
             this->loop = loop;
+            this->init(::eventfd(0, EFD_CLOEXEC));
         }
 
         void start(void (*cb)(Async *)) {
-            this->cb = cb;
-            Poll::setCb([](Poll *p, int, int) {
-                uint64_t val;
-                if (::read(((Async *) p)->state.fd, &val, 8) == 8) {
-                    ((Async *) p)->cb((Async *) p);
-                }
-            });
-            Poll::start(loop, this, UV_READABLE);
+//            this->cb = cb;
+//            Poll::setCb([](Poll *p, int, int) {
+//                uint64_t val;
+//                if (::read(((Async *) p)->state.fd, &val, 8) == 8) {
+//                    ((Async *) p)->cb((Async *) p);
+//                }
+//            });
+//            Poll::start(loop, this, SOCKET_READABLE);
         }
 
         void send() {

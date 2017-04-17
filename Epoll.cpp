@@ -1,14 +1,10 @@
 #include "Epoll.h"
 
-#include <mutex>
 #include <chrono>
 
 namespace uS {
 
-// todo: remove this mutex, have callbacks set at program start
-std::recursive_mutex Epoll::cbMutex;
 void (*Epoll::callbacks[16])(Poll *, int, int);
-int Epoll::cbHead = 0;
 
 void Epoll::run() {
     timepoint = std::chrono::system_clock::now();
@@ -32,6 +28,7 @@ void Epoll::run() {
             preCb(preCbData);
         }
 
+        // should this call a common callback for all polls?
         for (int i = 0; i < numFdReady; i++) {
             Poll *poll = (Poll *) readyEvents[i].data.ptr;
             int status = -bool(readyEvents[i].events & EPOLLERR);

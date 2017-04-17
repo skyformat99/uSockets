@@ -10,6 +10,12 @@
 
 namespace uS {
 
+enum INTERNAL_STATE {
+    LISTENING = 15
+};
+
+static const int RECV_BUFFER_LENGTH = 1024 * 300;
+
 template <class Impl>
 SocketDescriptor Berkeley<Impl>::createSocket(int domain, int type, int protocol) {
     // returns INVALID_SOCKET on error
@@ -18,7 +24,7 @@ SocketDescriptor Berkeley<Impl>::createSocket(int domain, int type, int protocol
     flags = SOCK_CLOEXEC | SOCK_NONBLOCK;
 #endif
 
-    uv_os_sock_t createdFd = socket(domain, type | flags, protocol);
+    SocketDescriptor createdFd = socket(domain, type | flags, protocol);
 
 #ifdef __APPLE__
     if (createdFd != INVALID_SOCKET) {
@@ -39,9 +45,39 @@ void Berkeley<Impl>::closeSocket(SocketDescriptor fd) {
 #endif
 }
 
+// returns INVALID_SOCKET on error
+template <class Impl>
+SocketDescriptor Berkeley<Impl>::acceptSocket(SocketDescriptor fd) {
+    SocketDescriptor acceptedFd;
+#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
+    // Linux, FreeBSD
+    acceptedFd = accept4(fd, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
+#else
+    // Windows, OS X
+    acceptedFd = accept(fd, nullptr, nullptr);
+#endif
+
+#ifdef __APPLE__
+    if (acceptedFd != INVALID_SOCKET) {
+        int noSigpipe = 1;
+        setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
+    }
+#endif
+    return acceptedFd;
+}
+
+template <class Impl>
+bool Berkeley<Impl>::wouldBlock() {
+#ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    return errno == EWOULDBLOCK;// || errno == EAGAIN;
+#endif
+}
+
 template <class Impl>
 Berkeley<Impl>::Berkeley() : Impl(true) {
-
+    recvBuffer = new char[RECV_BUFFER_LENGTH];
 }
 
 template <class Impl>
@@ -62,7 +98,7 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
         return false;
     }
 
-    uv_os_sock_t listenFd = SOCKET_ERROR;
+    SocketDescriptor listenFd = SOCKET_ERROR;
     addrinfo *listenAddr;
     if ((options & ONLY_IPV4) == 0) {
         for (addrinfo *a = result; a && listenFd == SOCKET_ERROR; a = a->ai_next) {
@@ -103,64 +139,54 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
         return false;
     }
 
-    // listenSocket?
     class ListenPoll : public Impl::Poll {
+        ListenData listenData;
+        Impl *impl;
     public:
-        ListenPoll(Impl *impl, SocketDescriptor fd) : Impl::Poll(impl, fd) {
-            Impl::Poll::setCb([](typename Impl::Poll *p, int status, int events) {
+        ListenPoll(Impl *impl, SocketDescriptor fd, ListenData listenData) : Impl::Poll(impl) {
+            this->listenData = listenData;
+            this->impl = impl;
+            Impl::Poll::init(fd);
 
+            // 15 is reserved for listening
+            Impl::callbacks[INTERNAL_STATE::LISTENING] = [](typename Impl::Poll *p, int status, int events) {
 
-                // ListenPoll from p
+                ListenPoll *listenPoll = static_cast<ListenPoll *>(p);
+                Berkeley *context = static_cast<Berkeley *>(listenPoll->impl);
 
-//                uv_os_sock_t serverFd = listenSocket->getFd();
-//                Context *netContext = listenSocket->nodeData->netContext;
-//                uv_os_sock_t clientFd = netContext->acceptSocket(serverFd);
-//                if (clientFd == INVALID_SOCKET) {
-//                    /*
-//                    * If accept is failing, the pending connection won't be removed and the
-//                    * polling will cause the server to spin, using 100% cpu. Switch to a timer
-//                    * event instead to avoid this.
-//                    */
-//                    if (!TIMER && !netContext->wouldBlock()) {
-//                        listenSocket->stop(listenSocket->nodeData->loop);
+                SocketDescriptor clientFd = context->acceptSocket(listenPoll->getFd());
+                if (clientFd == SOCKET_ERROR) {
+                    // start timer here
+                } else {
 
-//                        listenSocket->timer = new Timer(listenSocket->nodeData->loop);
-//                        listenSocket->timer->setData(listenSocket);
-//                        listenSocket->timer->start(accept_timer_cb<A>, 1000, 1000);
-//                    }
-//                    return;
-//                } else if (TIMER) {
-//                    listenSocket->timer->stop();
-//                    listenSocket->timer->close();
-//                    listenSocket->timer = nullptr;
+                    // stop timer if any
 
-//                    listenSocket->setCb(accept_poll_cb<A>);
-//                    listenSocket->start(listenSocket->nodeData->loop, listenSocket, UV_READABLE);
-//                }
-//                do {
-//                    SSL *ssl = nullptr;
-//                    if (listenSocket->sslContext) {
-//                        ssl = SSL_new(listenSocket->sslContext.getNativeContext());
-//                        SSL_set_accept_state(ssl);
-//                    }
+                    do {
+                        Socket *socket = listenPoll->listenData.socketAllocator(context);
 
-//                    Socket *socket = new Socket(listenSocket->nodeData, listenSocket->nodeData->loop, clientFd, ssl);
-//                    socket->setPoll(UV_READABLE);
-//                    A(socket);
-//                } while ((clientFd = netContext->acceptSocket(serverFd)) != INVALID_SOCKET);
+                        // set FD, and start polling here
+                        socket->init(clientFd);
+                        socket->start(context, socket, SOCKET_READABLE);
 
+                        listenPoll->listenData.acceptHandler(socket);
+                    } while ((clientFd = context->acceptSocket(listenPoll->getFd())) != SOCKET_ERROR);
+                }
+            };
 
-
-
-            });
-            Impl::Poll::start(impl, this, UV_READABLE);
+            Impl::Poll::setState(INTERNAL_STATE::LISTENING);
+            Impl::Poll::start(impl, this, SOCKET_READABLE);
         }
     };
 
-    ListenPoll *listenPoll = new ListenPoll(this, listenFd);
+
+    ListenData listenData = {host, port, acceptHandler, socketAllocator};
+
+    ListenPoll *listenPoll = new ListenPoll(this, listenFd, listenData);
+
+
 
     // vector of ListenPoll?
-    listenData.push_back({host, port, acceptHandler, socketAllocator, listenPoll});
+    this->listenData.push_back(listenData);
 
     freeaddrinfo(result);
     return true;
@@ -179,7 +205,59 @@ void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Sock
 
 template <class Impl>
 void Berkeley<Impl>::Socket::close() {
-    std::cout << "Closing socket" << std::endl;
+    context->closeSocket(Impl::Poll::getFd());
+}
+
+template <class Impl>
+void Berkeley<Impl>::ioHandler(void (*onData)(Socket *, char *, size_t), void (*onEnd)(Socket *), Socket *socket, int status, int events) {
+
+    Berkeley<Impl> *context = socket->context;
+
+    if (status < 0) {
+        onEnd(socket);
+        return;
+    }
+
+//    if (events & SOCKET_WRITABLE) {
+//        if (!socket->messageQueue.empty() && (events & SOCKET_WRITABLE)) {
+//            socket->cork(true);
+//            while (true) {
+//                Queue::Message *messagePtr = socket->messageQueue.front();
+//                ssize_t sent = ::send(socket->getFd(), messagePtr->data, messagePtr->length, MSG_NOSIGNAL);
+//                if (sent == (ssize_t) messagePtr->length) {
+//                    if (messagePtr->callback) {
+//                        messagePtr->callback(p, messagePtr->callbackData, false, messagePtr->reserved);
+//                    }
+//                    socket->messageQueue.pop();
+//                    if (socket->messageQueue.empty()) {
+//                        // todo, remove bit, don't set directly
+//                        socket->change(socket->nodeData->loop, socket, socket->setPoll(UV_READABLE));
+//                        break;
+//                    }
+//                } else if (sent == SOCKET_ERROR) {
+//                    if (!netContext->wouldBlock()) {
+//                        STATE::onEnd((Socket *) p);
+//                        return;
+//                    }
+//                    break;
+//                } else {
+//                    messagePtr->length -= sent;
+//                    messagePtr->data += sent;
+//                    break;
+//                }
+//            }
+//            socket->cork(false);
+//        }
+//    }
+
+    if (events & SOCKET_READABLE) {
+        int length = recv(socket->getFd(), context->recvBuffer, RECV_BUFFER_LENGTH, 0);
+        if (length > 0) {
+            onData(socket, context->recvBuffer, length);
+        } else if (!length || (length == SOCKET_ERROR && !context->wouldBlock())) {
+            onEnd(socket);
+        }
+    }
 }
 
 template class Berkeley<Epoll>;
