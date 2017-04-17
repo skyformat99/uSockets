@@ -3,12 +3,10 @@
 
 #include <functional>
 #include <vector>
-#include <iostream>
 
 namespace uS {
 
 typedef int SocketDescriptor;
-static const SocketDescriptor SOCKET_ERROR = -1;
 
 enum {
     ONLY_IPV4,
@@ -19,7 +17,9 @@ template <class Impl>
 class Berkeley : public Impl {
 public:
     class Socket : public Impl::Poll {
+        // 4 byte here
         Berkeley *context;
+        void *userData;
 
     public:
         Socket(Berkeley *context) : context(context), Impl::Poll(context) {
@@ -77,7 +77,7 @@ public:
     }
 
     bool listen(const char *host, int port, int options, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
-    void connect(const char *host, int port, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
+    void connect(const char *host, int port, std::function<void(Socket *socket)> connectionHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
 
 };
 

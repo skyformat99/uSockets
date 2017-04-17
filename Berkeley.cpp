@@ -10,7 +10,10 @@
 
 namespace uS {
 
+static const SocketDescriptor SOCKET_ERROR = -1;
+
 enum INTERNAL_STATE {
+    CONNECTING = 14,
     LISTENING = 15
 };
 
@@ -193,14 +196,45 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
 }
 
 template <class Impl>
-void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator) {
+void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Socket *socket)> connectionHandler, std::function<Socket *(Berkeley *)> socketAllocator) {
 
     if (!socketAllocator) {
         socketAllocator = defaultSocketAllocator;
     }
 
-    // for now
-    listenData.push_back({host, port, acceptHandler, socketAllocator});
+    addrinfo hints, *result;
+    memset(&hints, 0, sizeof(addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, std::to_string(port).c_str(), &hints, &result) != 0) {
+        connectionHandler(nullptr);
+        return;
+    }
+
+    SocketDescriptor fd = createSocket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (fd == SOCKET_ERROR) {
+        freeaddrinfo(result);
+        connectionHandler(nullptr);
+        return;
+    }
+
+    ::connect(fd, result->ai_addr, result->ai_addrlen);
+    freeaddrinfo(result);
+
+    Socket *socket = socketAllocator(this);
+    socket->init(fd);
+
+    socket->userData = new std::function<void(Socket *socket)>(connectionHandler);
+    Impl::callbacks[INTERNAL_STATE::CONNECTING] = [](typename Impl::Poll *p, int status, int events) {
+        Socket *socket = (Socket *) p;
+        socket->change(socket->context, socket, SOCKET_READABLE);
+        std::function<void(Socket *socket)> *f = (std::function<void(Socket *socket)> *) socket->userData;
+        (*f)(socket);
+        delete f;
+    };
+
+    socket->setState(INTERNAL_STATE::CONNECTING);
+    socket->start(this, socket, SOCKET_WRITABLE);
 }
 
 template <class Impl>

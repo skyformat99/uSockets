@@ -34,7 +34,7 @@ int main() {
 
         // getting nullptr for socket can be sign of error
 
-        std::cout << "Client connected!" << std::endl;
+        std::cout << "Client connected: " << sizeof(*socket) << std::endl;
 
         // all new sockets needs to have a state set!
         socket->setState(HTTP_SOCKET);
@@ -43,13 +43,15 @@ int main() {
         std::cout << "is now listening" << std::endl;
     }
 
-//    c.connect("localhost", 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
-//        if (!socket) {
-//            std::cout << "Connection failed" << std::endl;
-//        } else {
-//            std::cout << "We connected" << std::endl;
-//        }
-//    }, socketAllocator);
+    c.connect("localhost", 3000, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
+        if (!socket) {
+            std::cout << "Connection failed" << std::endl;
+        } else {
+            std::cout << "We connected" << std::endl;
+
+            socket->setState(HTTP_SOCKET);
+        }
+    }, socketAllocator);
 
     // context is the loop
     c.run();
