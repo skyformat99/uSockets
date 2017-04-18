@@ -188,7 +188,7 @@ public:
         }
 
     public:
-        void setState(int state) {
+        void setDerivative(int state) {
             this->state.cbIndex = state;
         }
 

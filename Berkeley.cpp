@@ -176,7 +176,7 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
                 }
             };
 
-            Impl::Poll::setState(INTERNAL_STATE::LISTENING);
+            Impl::Poll::setDerivative(INTERNAL_STATE::LISTENING);
             Impl::Poll::start(impl, this, SOCKET_READABLE);
         }
     };
@@ -233,7 +233,7 @@ void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Sock
         delete f;
     };
 
-    socket->setState(INTERNAL_STATE::CONNECTING);
+    socket->setDerivative(INTERNAL_STATE::CONNECTING);
     socket->start(this, socket, SOCKET_WRITABLE);
 }
 
@@ -295,6 +295,11 @@ void Berkeley<Impl>::ioHandler(void (*onData)(Socket *, char *, size_t), void (*
             onEnd(socket);
         }
     }
+}
+
+template <class Impl>
+void Berkeley<Impl>::Socket::send(const char *data, size_t length, void (*cb)(Berkeley::Socket *, bool)) {
+    std::cout << "yolo sending" << std::endl;
 }
 
 template class Berkeley<Epoll>;

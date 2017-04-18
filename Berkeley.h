@@ -30,8 +30,18 @@ public:
             return context;
         }
 
+        void send(const char *data, size_t length, void (*cb)(Socket *, bool cancelled) = nullptr);
         void shutdown();
         void close(void (*cb)(Socket *));
+        bool isShuttingDown();
+        void cork(bool enable);
+        void setUserData(void *userData) {
+            this->userData = userData;
+        }
+
+        void *getUserData() {
+            return userData;
+        }
 
         friend class Berkeley;
     };
@@ -59,21 +69,17 @@ private:
     };
 
     std::vector<ListenData> listenData;
-    static void ioHandler(void (*onData)(Socket *, char *, size_t), void (*onEnd)(Socket *), Socket *, int, int);
+    static inline void ioHandler(void (*onData)(Socket *, char *, size_t), void (*onEnd)(Socket *), Socket *, int, int);
 
 public:
     Berkeley();
 
     template <class State>
-    void addSocketState(int index) {
-        struct PollHandler {
-            static void f(typename Impl::Poll *poll, int status, int events) {
-                ioHandler(State::onData, State::onEnd, (Socket *) poll, status, events);
-            }
-        };
-
+    void registerSocketDerivative(int index) {
         // todo: move this vector to Berkeley so that libuv can also implement this
-        Impl::callbacks[index] = PollHandler::f;
+        Impl::callbacks[index] = [](typename Impl::Poll *poll, int status, int events) {
+            ioHandler(State::onData, State::onEnd, (Socket *) poll, status, events);
+        };
     }
 
     bool listen(const char *host, int port, int options, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
