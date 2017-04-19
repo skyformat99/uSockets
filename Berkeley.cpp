@@ -79,7 +79,7 @@ bool Berkeley<Impl>::wouldBlock() {
 }
 
 template <class Impl>
-Berkeley<Impl>::Berkeley() : Impl(true) {
+Berkeley<Impl>::Berkeley(Impl *impl) : impl(impl) {
     recvBuffer = new char[RECV_BUFFER_LENGTH];
 
     corkMessage = Socket::allocMessage(RECV_BUFFER_LENGTH);
@@ -147,18 +147,17 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
 
     class ListenPoll : public Impl::Poll {
         ListenData listenData;
-        Impl *impl;
+        Berkeley<Impl> *context;
     public:
-        ListenPoll(Impl *impl, SocketDescriptor fd, ListenData listenData) : Impl::Poll(impl) {
+        ListenPoll(Berkeley<Impl> *context, SocketDescriptor fd, ListenData listenData) : context(context), Impl::Poll(context->impl) {
             this->listenData = listenData;
-            this->impl = impl;
             Impl::Poll::init(fd);
 
             // 15 is reserved for listening
             Impl::callbacks[INTERNAL_STATE::LISTENING] = [](typename Impl::Poll *p, int status, int events) {
 
                 ListenPoll *listenPoll = static_cast<ListenPoll *>(p);
-                Berkeley *context = static_cast<Berkeley *>(listenPoll->impl);
+                Berkeley *context = listenPoll->context;
 
                 SocketDescriptor clientFd = context->acceptSocket(listenPoll->getFd());
                 if (clientFd == SOCKET_ERROR) {
@@ -172,7 +171,7 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
 
                         // set FD, and start polling here
                         socket->init(clientFd);
-                        socket->start(context, socket, SOCKET_READABLE);
+                        socket->start(context->impl, socket, SOCKET_READABLE);
 
                         listenPoll->listenData.acceptHandler(socket);
                     } while ((clientFd = context->acceptSocket(listenPoll->getFd())) != SOCKET_ERROR);
@@ -180,7 +179,7 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
             };
 
             Impl::Poll::setDerivative(INTERNAL_STATE::LISTENING);
-            Impl::Poll::start(impl, this, SOCKET_READABLE);
+            Impl::Poll::start(context->impl, this, SOCKET_READABLE);
         }
     };
 
@@ -230,26 +229,26 @@ void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Sock
     socket->userData = new std::function<void(Socket *socket)>(connectionHandler);
     Impl::callbacks[INTERNAL_STATE::CONNECTING] = [](typename Impl::Poll *p, int status, int events) {
         Socket *socket = (Socket *) p;
-        socket->change(socket->context, socket, SOCKET_READABLE);
+        socket->change(socket->context->impl, socket, SOCKET_READABLE);
         std::function<void(Socket *socket)> *f = (std::function<void(Socket *socket)> *) socket->userData;
         (*f)(socket);
         delete f;
     };
 
     socket->setDerivative(INTERNAL_STATE::CONNECTING);
-    socket->start(this, socket, SOCKET_WRITABLE);
+    socket->start(this->impl, socket, SOCKET_WRITABLE);
 }
 
 template <class Impl>
 void Berkeley<Impl>::Socket::close(void (*cb)(Socket *)) {
-    Impl::Poll::stop(context);
-    Impl::Poll::close(context, (void (*)(typename Impl::Poll *)) cb);
+    Impl::Poll::stop(context->impl);
+    Impl::Poll::close(context->impl, (void (*)(typename Impl::Poll *)) cb);
 
     context->closeSocket(Impl::Poll::getFd());
 }
 
 template <class Impl>
-void Berkeley<Impl>::ioHandler(void (*onData)(Socket *, char *, size_t), void (*onEnd)(Socket *), Socket *socket, int status, int events) {
+void Berkeley<Impl>::ioHandler(Socket *(*onData)(Socket *, char *, size_t), void (*onEnd)(Socket *), Socket *socket, int status, int events) {
 
     Berkeley<Impl> *context = socket->context;
 
@@ -348,7 +347,7 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
 
     if (messageQueue.empty()) {
 
-        std::cout << "Sending on fd: " << this->getFd() << " " << std::string(message->data, message->length) << std::endl;
+        //std::cout << "Sending on fd: " << this->getFd() << " " << std::string(message->data, message->length) << std::endl;
 
         ssize_t sent = ::send(this->getFd(), message->data, message->length, MSG_NOSIGNAL);
         if (sent == (ssize_t) message->length) {

@@ -15,7 +15,10 @@ enum {
 };
 
 template <class Impl>
-class Berkeley : public Impl { // it should HAVE a Impl, not derive from it! Take Impl ptr as constructor
+class Berkeley {
+
+    Impl *impl;
+
 public:
     class Socket : public Impl::Poll { //SocketBase
     public:
@@ -73,7 +76,7 @@ public:
         }
 
     public:
-        Socket(Berkeley *context) : context(context), Impl::Poll(context) {
+        Socket(Berkeley *context) : context(context), Impl::Poll(context->impl) {
 
         }
 
@@ -93,13 +96,110 @@ public:
         }
 
         bool sendMessage(typename Queue::Message *message, bool moveMessage = true);
-
-        // higher level send function good for framing other higher level protocols
-        // sendTransformed
-
         void cork(bool enable);
 
+        // these can possibly live in each derivative
+        Socket *next = nullptr, *prev = nullptr;
+
         friend class Berkeley;
+
+
+
+
+
+
+
+
+        template <class T, class D>
+        void sendTransformed(const char *message, size_t length, void(*callback)(void *socket, void *data, bool cancelled, void *reserved), void *callbackData, D transformData) {
+            size_t estimatedLength = T::estimate(message, length) + sizeof(typename Queue::Message);
+
+            // allokera estimatedLength från corkbuffern
+
+            //typename Queue::Message *messagePtr = allocMessage(estimatedLength - sizeof(typename Queue::Message));
+
+            if (corked) {
+
+                typename Queue::Message m;
+                typename Queue::Message *messagePtr = &m;
+
+                messagePtr->data = context->corkMessage->data + context->corkMessage->length;
+
+                messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+
+                context->corkMessage->length += messagePtr->length;
+                messagePtr->callback = nullptr;
+
+                //std::cout << "Cork buffer length: " << context->corkMessage->length << std::endl;
+
+                if (context->corkMessage->length > 300 * 1024) {
+                    std::cout << "Sheet!" << std::endl;
+                }
+
+            }
+
+
+//            if (hasEmptyQueue()) {
+//                if (estimatedLength <= uS::NodeData::preAllocMaxSize) {
+//                    int memoryLength = estimatedLength;
+//                    int memoryIndex = nodeData->getMemoryBlockIndex(memoryLength);
+
+//                    Queue::Message *messagePtr = (Queue::Message *) nodeData->getSmallMemoryBlock(memoryIndex);
+//                    messagePtr->data = ((char *) messagePtr) + sizeof(Queue::Message);
+//                    messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+
+//                    bool wasTransferred;
+//                    if (write(messagePtr, wasTransferred)) {
+//                        if (!wasTransferred) {
+//                            nodeData->freeSmallMemoryBlock((char *) messagePtr, memoryIndex);
+//                            if (callback) {
+//                                callback(this, callbackData, false, nullptr);
+//                            }
+//                        } else {
+//                            messagePtr->callback = callback;
+//                            messagePtr->callbackData = callbackData;
+//                        }
+//                    } else {
+//                        nodeData->freeSmallMemoryBlock((char *) messagePtr, memoryIndex);
+//                        if (callback) {
+//                            callback(this, callbackData, true, nullptr);
+//                        }
+//                    }
+//                } else {
+//                    Queue::Message *messagePtr = allocMessage(estimatedLength - sizeof(Queue::Message));
+//                    messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+
+//                    bool wasTransferred;
+//                    if (write(messagePtr, wasTransferred)) {
+//                        if (!wasTransferred) {
+//                            freeMessage(messagePtr);
+//                            if (callback) {
+//                                callback(this, callbackData, false, nullptr);
+//                            }
+//                        } else {
+//                            messagePtr->callback = callback;
+//                            messagePtr->callbackData = callbackData;
+//                        }
+//                    } else {
+//                        freeMessage(messagePtr);
+//                        if (callback) {
+//                            callback(this, callbackData, true, nullptr);
+//                        }
+//                    }
+//                }
+//            } else {
+//                Queue::Message *messagePtr = allocMessage(estimatedLength - sizeof(Queue::Message));
+//                messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+//                messagePtr->callback = callback;
+//                messagePtr->callbackData = callbackData;
+//                enqueue(messagePtr);
+//            }
+        }
+
+
+
+
+
     };
 
 private:
@@ -127,16 +227,16 @@ private:
     };
 
     std::vector<ListenData> listenData;
-    static inline void ioHandler(void (*onData)(Socket *, char *, size_t), void (*onEnd)(Socket *), Socket *, int, int);
+    static inline void ioHandler(Socket *(*onData)(Socket *, char *, size_t), void (*onEnd)(Socket *), Socket *, int, int);
 
 public:
-    Berkeley();
+    Berkeley(Impl *impl);
 
     template <class State>
     void registerSocketDerivative(int index) {
         // todo: move this vector to Berkeley so that libuv can also implement this
         Impl::callbacks[index] = [](typename Impl::Poll *poll, int status, int events) {
-            ioHandler(State::onData, State::onEnd, (Socket *) poll, status, events);
+            ioHandler((Socket *(*)(Socket *, char *, size_t)) State::onData, (void (*)(Socket *)) State::onEnd, (Socket *) poll, status, events);
         };
     }
 
