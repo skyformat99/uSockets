@@ -10,6 +10,7 @@ enum States {
 struct HttpSocket : uS::Berkeley<uS::Epoll>::Socket {
     HttpSocket(uS::Berkeley<uS::Epoll> *context) : uS::Berkeley<uS::Epoll>::Socket(context) {
         setDerivative(HTTP_SOCKET);
+        std::cout << "sizeof: " << sizeof(*this) << std::endl;
     }
 
     static void onData(uS::Berkeley<uS::Epoll>::Socket *socket, char *data, size_t length) {
@@ -32,7 +33,15 @@ int main() {
     c.registerSocketDerivative<HttpSocket>(HTTP_SOCKET);
 
     if (c.listen(nullptr, 3000, 0, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
-        socket->send("Hello there, client!", 20);
+        HttpSocket *httpSocket = static_cast<HttpSocket *>(socket);
+        httpSocket->cork(true);
+        HttpSocket::Message message;
+        message.data = "Why hello there!";
+        message.length = 16;
+        message.callback = nullptr;
+        httpSocket->sendMessage(&message, false);
+        httpSocket->sendMessage(&message, false);
+        httpSocket->cork(false);
     }, HttpSocket::allocator)) {
         std::cout << "Listening to port 3000" << std::endl;
     }
@@ -41,6 +50,7 @@ int main() {
         if (!socket) {
             std::cout << "Connection failed" << std::endl;
         } else {
+            socket->setDerivative(HTTP_SOCKET);
             std::cout << "We connected" << std::endl;
         }
     }, HttpSocket::allocator);

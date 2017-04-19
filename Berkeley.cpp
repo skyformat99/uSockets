@@ -81,6 +81,9 @@ bool Berkeley<Impl>::wouldBlock() {
 template <class Impl>
 Berkeley<Impl>::Berkeley() : Impl(true) {
     recvBuffer = new char[RECV_BUFFER_LENGTH];
+
+    corkMessage = Socket::allocMessage(RECV_BUFFER_LENGTH);
+    corkMessage->length = 0;
 }
 
 template <class Impl>
@@ -298,8 +301,82 @@ void Berkeley<Impl>::ioHandler(void (*onData)(Socket *, char *, size_t), void (*
 }
 
 template <class Impl>
-void Berkeley<Impl>::Socket::send(const char *data, size_t length, void (*cb)(Berkeley::Socket *, bool)) {
-    std::cout << "yolo sending" << std::endl;
+void Berkeley<Impl>::Socket::cork(bool enable) {
+    this->corked = enable;
+    if (!corked && context->corkMessage->length) {
+        sendMessage(context->corkMessage, false);
+
+        // reset corkMessage here
+        context->corkMessage->length = 0;
+    }
+}
+
+template <class Impl>
+typename Berkeley<Impl>::Socket::Queue::Message *Berkeley<Impl>::Socket::allocMessage(size_t length, const char *data) {
+    typename Queue::Message *messagePtr = (typename Queue::Message *) new char[sizeof(typename Queue::Message) + length];
+    messagePtr->length = length;
+    messagePtr->data = ((char *) messagePtr) + sizeof(typename Queue::Message);
+    messagePtr->nextMessage = nullptr;
+
+    if (data) {
+        memcpy((char *) messagePtr->data, data, messagePtr->length);
+    }
+
+    return messagePtr;
+}
+
+template <class Impl>
+bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool moveMessage) {
+
+    if (corked) {
+
+
+        // if length is outside, send cork buffer and restart
+
+        memcpy(context->corkMessage->data + context->corkMessage->length, message->data, message->length);
+        context->corkMessage->length += message->length;
+
+        // also register this Queue's callback and callback data into the context's cork-vector
+
+        // the cork buffer is in itself a Message, which has its own callback with callbackdata
+        // set to point at the shared vector of other (corked) message callbacks to be called
+        // once this cork buffers callback is called
+        // the cork buffer can be sent with this function
+
+        return true;
+    }
+
+    if (messageQueue.empty()) {
+
+        std::cout << "Sending on fd: " << this->getFd() << " " << std::string(message->data, message->length) << std::endl;
+
+        ssize_t sent = ::send(this->getFd(), message->data, message->length, MSG_NOSIGNAL);
+        if (sent == (ssize_t) message->length) {
+            return true;
+        } else if (sent == SOCKET_ERROR) {
+            if (!context->wouldBlock()) {
+                message->callback(this, message->callbackData, true, nullptr);
+                return true;
+            }
+        } else {
+            message->length -= sent;
+            message->data += sent;
+        }
+    }
+
+    if (moveMessage) {
+        messageQueue.push(message);
+    } else {
+        // we need to copy the remains to a new buffer and queue it
+        // used for big buffers like the cork buffer!
+
+    }
+
+    // at this point, update poll
+//    if ((getPoll() & SOCKET_WRITABLE) == 0) {
+//        setPoll(getPoll() | SOCKET_WRITABLE);
+//        //changePoll(this);
+//    }
 }
 
 template class Berkeley<Epoll>;

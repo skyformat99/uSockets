@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <vector>
+#include <iostream>
 
 namespace uS {
 
@@ -16,10 +17,60 @@ enum {
 template <class Impl>
 class Berkeley : public Impl {
 public:
-    class Socket : public Impl::Poll {
+    class Socket : public Impl::Poll { //SocketBase
+    public:
+        struct Queue {
+            struct Message {
+                char *data;
+                size_t length;
+                Message *nextMessage = nullptr;
+                void (*callback)(Socket *socket, void *data, bool cancelled, void *reserved) = nullptr;
+                void *callbackData = nullptr, *reserved = nullptr;
+            };
+
+            Message *head = nullptr, *tail = nullptr;
+            void pop()
+            {
+                Message *nextMessage;
+                if ((nextMessage = head->nextMessage)) {
+                    delete [] (char *) head;
+                    head = nextMessage;
+                } else {
+                    delete [] (char *) head;
+                    head = tail = nullptr;
+                }
+            }
+
+            bool empty() {return head == nullptr;}
+            Message *front() {return head;}
+
+            void push(Message *message)
+            {
+                message->nextMessage = nullptr;
+                if (tail) {
+                    tail->nextMessage = message;
+                    tail = message;
+                } else {
+                    head = message;
+                    tail = message;
+                }
+            }
+        } messageQueue;
+
+        using Message = typename Queue::Message;
+
+    protected:
         // 4 byte here
         Berkeley *context;
         void *userData;
+
+        bool corked = false;
+
+        // helpers
+        static typename Queue::Message *allocMessage(size_t length, const char *data = nullptr);
+        void freeMessage(typename Queue::Message *message) {
+            delete [] (char *) message;
+        }
 
     public:
         Socket(Berkeley *context) : context(context), Impl::Poll(context) {
@@ -30,11 +81,9 @@ public:
             return context;
         }
 
-        void send(const char *data, size_t length, void (*cb)(Socket *, bool cancelled) = nullptr);
         void shutdown();
         void close(void (*cb)(Socket *));
         bool isShuttingDown();
-        void cork(bool enable);
         void setUserData(void *userData) {
             this->userData = userData;
         }
@@ -43,12 +92,20 @@ public:
             return userData;
         }
 
+        bool sendMessage(typename Queue::Message *message, bool moveMessage = true);
+
+        // higher level send function good for framing other higher level protocols
+        // sendTransformed
+
+        void cork(bool enable);
+
         friend class Berkeley;
     };
 
 private:
 
     char *recvBuffer;
+    typename Socket::Message *corkMessage;
 
     // helper functions
     SocketDescriptor createSocket(int, int, int);
@@ -84,7 +141,6 @@ public:
 
     bool listen(const char *host, int port, int options, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
     void connect(const char *host, int port, std::function<void(Socket *socket)> connectionHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
-
 };
 
 }
