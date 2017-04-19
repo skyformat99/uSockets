@@ -77,7 +77,17 @@ public:
 
     public:
         Socket(Berkeley *context) : context(context), Impl::Poll(context->impl) {
+            // setNoDelay(true)
+        }
 
+        Socket(Socket &&other) : Impl::Poll(std::move(other), other.context->impl) {
+            std::cout << "Moving socket now" << std::endl;
+
+            context = other.context;
+            userData = other.userData;
+            corked = other.corked;
+            next = other.next;
+            prev = other.prev;
         }
 
         Berkeley *getContext() {

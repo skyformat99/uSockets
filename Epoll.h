@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <vector>
 
+#include <iostream>
+
 namespace uS {
 
 typedef int SocketDescriptor;
@@ -132,6 +134,16 @@ public:
             //fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
             //state.fd = fd;
             loop->numPolls++;
+        }
+
+        Poll(Poll &&other, Epoll *loop) {
+            state = other.state;
+
+
+            std::cout << "Moving Poll now!" << std::endl;
+
+            // Poll should know its own current poll!
+            change(loop, this, SOCKET_READABLE);
         }
 
         // this is new, set fd here instead of at constructor
