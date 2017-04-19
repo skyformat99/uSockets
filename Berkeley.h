@@ -15,7 +15,7 @@ enum {
 };
 
 template <class Impl>
-class Berkeley : public Impl {
+class Berkeley : public Impl { // it should HAVE a Impl, not derive from it! Take Impl ptr as constructor
 public:
     class Socket : public Impl::Poll { //SocketBase
     public:
@@ -104,6 +104,7 @@ public:
 
 private:
 
+    // these can be passed as arugment from Hub
     char *recvBuffer;
     typename Socket::Message *corkMessage;
 

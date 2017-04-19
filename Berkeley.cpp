@@ -379,6 +379,11 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
 //    }
 }
 
+template <class Impl>
+bool Berkeley<Impl>::Socket::isShuttingDown() {
+    return false;
+}
+
 template class Berkeley<Epoll>;
 
 }
