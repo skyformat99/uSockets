@@ -138,10 +138,6 @@ public:
 
         Poll(Poll &&other, Epoll *loop) {
             state = other.state;
-
-
-            std::cout << "Moving Poll now!" << std::endl;
-
             // Poll should know its own current poll!
             change(loop, this, SOCKET_READABLE);
         }

@@ -5,6 +5,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <netdb.h>
 #include <string.h>
 
@@ -48,6 +49,15 @@ void Berkeley<Impl>::closeSocket(SocketDescriptor fd) {
 #endif
 }
 
+template <class Impl>
+void Berkeley<Impl>::shutdownSocket(SocketDescriptor fd) {
+#ifdef _WIN32
+    shutdown(fd, SHUT_WR);
+#else
+    shutdown(fd, SHUT_WR);
+#endif
+}
+
 // returns INVALID_SOCKET on error
 template <class Impl>
 SocketDescriptor Berkeley<Impl>::acceptSocket(SocketDescriptor fd) {
@@ -76,6 +86,11 @@ bool Berkeley<Impl>::wouldBlock() {
 #else
     return errno == EWOULDBLOCK;// || errno == EAGAIN;
 #endif
+}
+
+template <class Impl>
+void Berkeley<Impl>::setNoDelay(SocketDescriptor fd, int enable) {
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
 }
 
 template <class Impl>
@@ -149,7 +164,7 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
         ListenData listenData;
         Berkeley<Impl> *context;
     public:
-        ListenPoll(Berkeley<Impl> *context, SocketDescriptor fd, ListenData listenData) : context(context), Impl::Poll(context->impl) {
+        ListenPoll(Berkeley<Impl> *context, SocketDescriptor fd, ListenData listenData) : Impl::Poll(context->impl), context(context) {
             this->listenData = listenData;
             Impl::Poll::init(fd);
 
@@ -301,13 +316,23 @@ void Berkeley<Impl>::ioHandler(Socket *(*onData)(Socket *, char *, size_t), void
 
 template <class Impl>
 void Berkeley<Impl>::Socket::cork(bool enable) {
-    this->corked = enable;
-    if (!corked && context->corkMessage->length) {
-        sendMessage(context->corkMessage, false);
 
-        // reset corkMessage here
-        context->corkMessage->length = 0;
+    if (enable == corked) {
+        std::cout << "ERROR: Cork did not change setting!" << std::endl;
+        std::terminate();
     }
+
+    corked = enable;
+    if (corked) {
+        context->corkMessage->length = 0;
+    } else if (context->corkMessage->length) {
+        sendMessage(context->corkMessage, false);
+    }
+}
+
+template <class Impl>
+void Berkeley<Impl>::Socket::setNoDelay(bool enable) {
+    context->setNoDelay(Impl::Poll::getFd(), enable);
 }
 
 template <class Impl>
@@ -381,6 +406,11 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
 template <class Impl>
 bool Berkeley<Impl>::Socket::isShuttingDown() {
     return false;
+}
+
+template <class Impl>
+void Berkeley<Impl>::Socket::shutdown() {
+    context->shutdownSocket(Impl::Poll::getFd());
 }
 
 template class Berkeley<Epoll>;

@@ -20,6 +20,11 @@ class Berkeley {
     Impl *impl;
 
 public:
+
+    Impl *getLoop() {
+        return impl;
+    }
+
     class Socket : public Impl::Poll { //SocketBase
     public:
         struct Queue {
@@ -76,13 +81,11 @@ public:
         }
 
     public:
-        Socket(Berkeley *context) : context(context), Impl::Poll(context->impl) {
-            // setNoDelay(true)
+        Socket(Berkeley *context) : Impl::Poll(context->impl), context(context) {
+            setNoDelay(true);
         }
 
         Socket(Socket &&other) : Impl::Poll(std::move(other), other.context->impl) {
-            std::cout << "Moving socket now" << std::endl;
-
             context = other.context;
             userData = other.userData;
             corked = other.corked;
@@ -94,6 +97,7 @@ public:
             return context;
         }
 
+        void setNoDelay(bool enable);
         void shutdown();
         void close(void (*cb)(Socket *));
         bool isShuttingDown();
@@ -223,6 +227,8 @@ private:
     SocketDescriptor acceptSocket(int);
     bool wouldBlock();
     void closeSocket(SocketDescriptor fd);
+    void shutdownSocket(SocketDescriptor fd);
+    void setNoDelay(SocketDescriptor fd, int enable);
 
     std::function<Socket *(Berkeley *)> defaultSocketAllocator;
 
