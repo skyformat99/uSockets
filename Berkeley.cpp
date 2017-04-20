@@ -99,6 +99,7 @@ Berkeley<Impl>::Berkeley(Impl *impl) : impl(impl) {
 
     corkMessage = Socket::allocMessage(RECV_BUFFER_LENGTH);
     corkMessage->length = 0;
+    corkMessage->callback = nullptr; // should be a CB that empties all enqueued CBs
 }
 
 template <class Impl>
@@ -256,10 +257,12 @@ void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Sock
 
 template <class Impl>
 void Berkeley<Impl>::Socket::close(void (*cb)(Socket *)) {
+    SocketDescriptor fd = Impl::Poll::getFd();
+
     Impl::Poll::stop(context->impl);
     Impl::Poll::close(context->impl, (void (*)(typename Impl::Poll *)) cb);
 
-    context->closeSocket(Impl::Poll::getFd());
+    context->closeSocket(fd);
 }
 
 template <class Impl>
@@ -379,7 +382,9 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
             return true;
         } else if (sent == SOCKET_ERROR) {
             if (!context->wouldBlock()) {
-                message->callback(this, message->callbackData, true, nullptr);
+                if (message->callback) {
+                    message->callback(this, message->callbackData, true, nullptr);
+                }
                 return true;
             }
         } else {
@@ -401,13 +406,16 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
 //        setPoll(getPoll() | SOCKET_WRITABLE);
 //        //changePoll(this);
 //    }
+
+    return false;
 }
 
 template <class Impl>
 bool Berkeley<Impl>::Socket::isShuttingDown() {
-    return false;
+    return state.shuttingDown;
 }
 
+// should empty the queue and append optional data and set shutting down appropriately
 template <class Impl>
 void Berkeley<Impl>::Socket::shutdown() {
     context->shutdownSocket(Impl::Poll::getFd());

@@ -26,6 +26,13 @@ public:
     }
 
     class Socket : public Impl::Poll { //SocketBase
+
+        // should also hold corked!
+        struct {
+            int poll : 4;
+            int shuttingDown : 4;
+        } state = {0, false};
+
     public:
         struct Queue {
             struct Message {
@@ -68,10 +75,10 @@ public:
         using Message = typename Queue::Message;
 
     protected:
-        // 4 byte here
         Berkeley *context;
         void *userData;
 
+        // should lie in state!
         bool corked = false;
 
         // helpers
@@ -98,8 +105,14 @@ public:
         }
 
         void setNoDelay(bool enable);
-        void shutdown();
         void close(void (*cb)(Socket *));
+
+        // shutdown should probably automatically set isShutting down, and pass optional data and shut down when the queue is empty
+        void shutdown();
+        void setShuttingDown(bool shuttingDown) {
+            state.shuttingDown = shuttingDown;
+        }
+
         bool isShuttingDown();
         void setUserData(void *userData) {
             this->userData = userData;

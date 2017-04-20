@@ -130,9 +130,7 @@ public:
             unsigned int cbIndex : 4;
         } state = {-1, 0};
 
-        Poll(Epoll *loop/*, uv_os_sock_t fd*/) {
-            //fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-            //state.fd = fd;
+        Poll(Epoll *loop) {
             loop->numPolls++;
         }
 
