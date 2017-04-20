@@ -103,6 +103,12 @@ Berkeley<Impl>::Berkeley(Impl *impl) : impl(impl) {
 }
 
 template <class Impl>
+Berkeley<Impl>::~Berkeley() {
+    delete [] recvBuffer;
+    Socket::freeMessage(corkMessage);
+}
+
+template <class Impl>
 bool Berkeley<Impl>::listen(const char *host, int port, int options, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator) {
 
     if (!socketAllocator) {
@@ -161,56 +167,69 @@ bool Berkeley<Impl>::listen(const char *host, int port, int options, std::functi
         return false;
     }
 
-    class ListenPoll : public Impl::Poll {
-        ListenData listenData;
-        Berkeley<Impl> *context;
-    public:
-        ListenPoll(Berkeley<Impl> *context, SocketDescriptor fd, ListenData listenData) : Impl::Poll(context->impl), context(context) {
-            this->listenData = listenData;
-            Impl::Poll::init(fd);
-
-            // 15 is reserved for listening
-            Impl::callbacks[INTERNAL_STATE::LISTENING] = [](typename Impl::Poll *p, int status, int events) {
-
-                ListenPoll *listenPoll = static_cast<ListenPoll *>(p);
-                Berkeley *context = listenPoll->context;
-
-                SocketDescriptor clientFd = context->acceptSocket(listenPoll->getFd());
-                if (clientFd == SOCKET_ERROR) {
-                    // start timer here
-                } else {
-
-                    // stop timer if any
-
-                    do {
-                        Socket *socket = listenPoll->listenData.socketAllocator(context);
-
-                        // set FD, and start polling here
-                        socket->init(clientFd);
-                        socket->start(context->impl, socket, SOCKET_READABLE);
-
-                        listenPoll->listenData.acceptHandler(socket);
-                    } while ((clientFd = context->acceptSocket(listenPoll->getFd())) != SOCKET_ERROR);
-                }
-            };
-
-            Impl::Poll::setDerivative(INTERNAL_STATE::LISTENING);
-            Impl::Poll::start(context->impl, this, SOCKET_READABLE);
-        }
-    };
-
 
     ListenData listenData = {host, port, acceptHandler, socketAllocator};
 
     ListenPoll *listenPoll = new ListenPoll(this, listenFd, listenData);
 
 
+    listenData.listenPoll = listenPoll;
 
     // vector of ListenPoll?
     this->listenData.push_back(listenData);
 
     freeaddrinfo(result);
     return true;
+}
+
+template <class Impl>
+Berkeley<Impl>::ListenPoll::ListenPoll(Berkeley<Impl> *context, SocketDescriptor fd, ListenData listenData) : Impl::Poll(context->impl), context(context) {
+    this->listenData = listenData;
+    Impl::Poll::init(fd);
+
+    // 15 is reserved for listening
+    Impl::callbacks[INTERNAL_STATE::LISTENING] = [](typename Impl::Poll *p, int status, int events) {
+
+        ListenPoll *listenPoll = static_cast<ListenPoll *>(p);
+        Berkeley *context = listenPoll->context;
+
+        SocketDescriptor clientFd = context->acceptSocket(listenPoll->getFd());
+        if (clientFd == SOCKET_ERROR) {
+            // start timer here
+        } else {
+
+            // stop timer if any
+
+            do {
+                Socket *socket = listenPoll->listenData.socketAllocator(context);
+
+                // set FD, and start polling here
+                socket->init(clientFd);
+                socket->start(context->impl, socket, SOCKET_READABLE);
+
+                listenPoll->listenData.acceptHandler(socket);
+            } while ((clientFd = context->acceptSocket(listenPoll->getFd())) != SOCKET_ERROR);
+        }
+    };
+
+    Impl::Poll::setDerivative(INTERNAL_STATE::LISTENING);
+    Impl::Poll::start(context->impl, this, SOCKET_READABLE);
+}
+
+template <class Impl>
+void Berkeley<Impl>::stopListening() {
+    for (ListenData &listenData : this->listenData) {
+        listenData.listenPoll->close();
+    }
+}
+
+template <class Impl>
+void Berkeley<Impl>::ListenPoll::close() {
+    SocketDescriptor fd = Impl::Poll::getFd();
+    Impl::Poll::close(context->impl, [](typename Impl::Poll *poll) {
+        delete static_cast<ListenPoll *>(poll);
+    });
+    context->closeSocket(fd);
 }
 
 template <class Impl>
@@ -320,9 +339,12 @@ void Berkeley<Impl>::ioHandler(Socket *(*onData)(Socket *, char *, size_t), void
 template <class Impl>
 void Berkeley<Impl>::Socket::cork(bool enable) {
 
+    //std::cout << "Cork: " << enable << std::endl;
+
     if (enable == corked) {
         std::cout << "ERROR: Cork did not change setting!" << std::endl;
-        std::terminate();
+        //std::terminate();
+        return;
     }
 
     corked = enable;

@@ -83,7 +83,7 @@ public:
 
         // helpers
         static typename Queue::Message *allocMessage(size_t length, const char *data = nullptr);
-        void freeMessage(typename Queue::Message *message) {
+        static void freeMessage(typename Queue::Message *message) {
             delete [] (char *) message;
         }
 
@@ -245,6 +245,8 @@ private:
 
     std::function<Socket *(Berkeley *)> defaultSocketAllocator;
 
+    class ListenPoll;
+
     // this data is similar to what you pass to listen, maybe let the user fill it and have different helper constructors?
     struct ListenData {
         const char *host;
@@ -252,7 +254,15 @@ private:
         std::function<void(Socket *socket)> acceptHandler;
         std::function<Socket *(Berkeley *)> socketAllocator;
 
-        typename Impl::Poll *listenPoll;
+        ListenPoll *listenPoll;
+    };
+
+    class ListenPoll : public Impl::Poll {
+        ListenData listenData;
+        Berkeley<Impl> *context;
+    public:
+        ListenPoll(Berkeley<Impl> *context, SocketDescriptor fd, ListenData listenData);
+        void close();
     };
 
     std::vector<ListenData> listenData;
@@ -260,6 +270,7 @@ private:
 
 public:
     Berkeley(Impl *impl);
+    ~Berkeley();
 
     template <class State>
     void registerSocketDerivative(int index) {
@@ -271,6 +282,8 @@ public:
 
     bool listen(const char *host, int port, int options, std::function<void(Socket *socket)> acceptHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
     void connect(const char *host, int port, std::function<void(Socket *socket)> connectionHandler, std::function<Socket *(Berkeley *)> socketAllocator = nullptr);
+
+    void stopListening();
 };
 
 }
