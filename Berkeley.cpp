@@ -401,6 +401,10 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
 
         ssize_t sent = ::send(this->getFd(), message->data, message->length, MSG_NOSIGNAL);
         if (sent == (ssize_t) message->length) {
+            // antar att denna behövs?
+            if (message->callback) {
+                message->callback(this, message->callbackData, false, nullptr);
+            }
             return true;
         } else if (sent == SOCKET_ERROR) {
             if (!context->wouldBlock()) {

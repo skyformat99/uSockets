@@ -145,23 +145,54 @@ public:
 
             //typename Queue::Message *messagePtr = allocMessage(estimatedLength - sizeof(typename Queue::Message));
 
-            if (corked) {
+retry:
+
+            if (corked && estimatedLength < 300 * 1024) {
+
+                if (context->corkMessage->length + estimatedLength < 300 * 1024) {
+
+                    typename Queue::Message m;
+                    typename Queue::Message *messagePtr = &m;
+
+                    messagePtr->data = context->corkMessage->data + context->corkMessage->length;
+
+                    messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+
+                    context->corkMessage->length += messagePtr->length;
+                    messagePtr->callback = nullptr;
+
+                    //std::cout << "Cork buffer length: " << context->corkMessage->length << std::endl;
+
+                    // these are wrong (vector of callbacks)
+                    context->corkMessage->callback = (void (*)(Socket *, void *, bool, void *)) callback;
+                    context->corkMessage->callbackData = callbackData;
+
+                } else {
+
+                    std::cout << "Sheet!" << std::endl;
+                    cork(false);
+                    cork(true);
+                    goto retry;
+
+
+                }
+
+            } else {
+
+                // MÅSTE IMPLEMENTERA ICKE-KORK för broadcast!
 
                 typename Queue::Message m;
-                typename Queue::Message *messagePtr = &m;
+                m.callback = (void (*)(Socket *, void *, bool, void *)) callback;
+                m.callbackData = callbackData;
 
-                messagePtr->data = context->corkMessage->data + context->corkMessage->length;
+                // använd en temp-buffer för att formatera på!
+                m.data = new char[estimatedLength];
 
-                messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+                m.length = T::transform(message, (char *) m.data, length, transformData);
 
-                context->corkMessage->length += messagePtr->length;
-                messagePtr->callback = nullptr;
+                sendMessage(&m, false);
 
-                //std::cout << "Cork buffer length: " << context->corkMessage->length << std::endl;
-
-                if (context->corkMessage->length > 300 * 1024) {
-                    std::cout << "Sheet!" << std::endl;
-                }
+                delete [] m.data;
 
             }
 
