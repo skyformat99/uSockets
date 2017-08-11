@@ -99,7 +99,12 @@ Berkeley<Impl>::Berkeley(Impl *impl) : impl(impl) {
 
     corkMessage = Socket::allocMessage(RECV_BUFFER_LENGTH);
     corkMessage->length = 0;
-    corkMessage->callback = nullptr; // should be a CB that empties all enqueued CBs
+    corkMessage->callback = [this](Socket *s, bool) {
+        for (auto &cb : corkCallbacks) {
+            cb(s, false);
+        }
+        corkCallbacks.clear();
+    };
 }
 
 template <class Impl>
@@ -385,13 +390,7 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
         memcpy(context->corkMessage->data + context->corkMessage->length, message->data, message->length);
         context->corkMessage->length += message->length;
 
-        // also register this Queue's callback and callback data into the context's cork-vector
-
-        // the cork buffer is in itself a Message, which has its own callback with callbackdata
-        // set to point at the shared vector of other (corked) message callbacks to be called
-        // once this cork buffers callback is called
-        // the cork buffer can be sent with this function
-
+        context->corkCallbacks.push_back(message->callback);
         return true;
     }
 
@@ -403,13 +402,13 @@ bool Berkeley<Impl>::Socket::sendMessage(typename Queue::Message *message, bool 
         if (sent == (ssize_t) message->length) {
             // antar att denna behövs?
             if (message->callback) {
-                message->callback(this, message->callbackData, false, nullptr);
+                message->callback(this, false);
             }
             return true;
         } else if (sent == SOCKET_ERROR) {
             if (!context->wouldBlock()) {
                 if (message->callback) {
-                    message->callback(this, message->callbackData, true, nullptr);
+                    message->callback(this, true);
                 }
                 return true;
             }

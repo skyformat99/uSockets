@@ -41,7 +41,10 @@ int main() {
         HttpSocket::Message message;
         message.data = "Why hello there!";
         message.length = 16;
-        message.callback = nullptr;
+        message.callback = [](uS::Berkeley<uS::Epoll>::Socket *socket, bool cancelled){
+            std::cout << "I was sent!" << std::endl;
+        };
+        // todo: do this enough to fill the cork-buffer and watch it go!
         httpSocket->sendMessage(&message, false);
         httpSocket->sendMessage(&message, false);
         httpSocket->cork(false);

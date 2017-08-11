@@ -37,10 +37,9 @@ public:
         struct Queue {
             struct Message {
                 char *data;
-                size_t length;
                 Message *nextMessage = nullptr;
-                void (*callback)(Socket *socket, void *data, bool cancelled, void *reserved) = nullptr;
-                void *callbackData = nullptr, *reserved = nullptr;
+                std::function<void(Socket *, bool)> callback;
+                int length;
             };
 
             Message *head = nullptr, *tail = nullptr;
@@ -265,6 +264,7 @@ private:
     // these can be passed as arugment from Hub
     char *recvBuffer;
     typename Socket::Message *corkMessage;
+    std::vector<std::function<void(Socket *, bool)>> corkCallbacks;
 
     // helper functions
     SocketDescriptor createSocket(int, int, int);
