@@ -29,7 +29,10 @@ struct HttpSocket : uS::Berkeley<uS::Epoll>::Socket {
 };
 
 int main() {
-    uS::Berkeley<uS::Epoll> c;
+
+    uS::Epoll loop(true);
+
+    uS::Berkeley<uS::Epoll> c(&loop);
     c.registerSocketDerivative<HttpSocket>(HTTP_SOCKET);
 
     if (c.listen(nullptr, 3000, 0, [](uS::Berkeley<uS::Epoll>::Socket *socket) {
@@ -55,5 +58,5 @@ int main() {
         }
     }, HttpSocket::allocator);
 
-    c.run();
+    loop.run();
 }
