@@ -198,6 +198,10 @@ public:
             this->state.cbIndex = state;
         }
 
+        int getDerivative() {
+            return this->state.cbIndex;
+        }
+
         bool isClosed() {
             return state.fd == -1;
         }

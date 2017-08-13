@@ -56,7 +56,6 @@ int main() {
         if (!socket) {
             std::cout << "Connection failed" << std::endl;
         } else {
-            socket->setDerivative(HTTP_SOCKET);
             std::cout << "We connected" << std::endl;
         }
     }, HttpSocket::allocator);

@@ -266,13 +266,19 @@ void Berkeley<Impl>::connect(const char *host, int port, std::function<void(Sock
     Socket *socket = socketAllocator(this);
     socket->init(fd);
 
-    socket->userData = new std::function<void(Socket *socket)>(connectionHandler);
+    struct PendingConnection {
+        std::function<void(Socket *socket)> cb;
+        int socketDerivative;
+    };
+
+    socket->userData = new PendingConnection({connectionHandler, socket->getDerivative()});
     Impl::callbacks[INTERNAL_STATE::CONNECTING] = [](typename Impl::Poll *p, int status, int events) {
         Socket *socket = (Socket *) p;
         socket->change(socket->context->impl, socket, SOCKET_READABLE);
-        std::function<void(Socket *socket)> *f = (std::function<void(Socket *socket)> *) socket->userData;
-        (*f)(socket);
-        delete f;
+        PendingConnection *pendingConnection = (PendingConnection *) socket->userData;
+        socket->setDerivative(pendingConnection->socketDerivative);
+        (pendingConnection->cb)(socket);
+        delete pendingConnection;
     };
 
     socket->setDerivative(INTERNAL_STATE::CONNECTING);
